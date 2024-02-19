@@ -6,4 +6,6 @@ Websocket Docs (Connection Info) - https://docs.cloud.coinbase.com/advanced-trad
 
 Change Coin by editing the products variable - 
 
+```js
 const products = ['BTC-USD'];
+```
