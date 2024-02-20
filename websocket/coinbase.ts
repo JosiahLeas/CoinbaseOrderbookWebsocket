@@ -2,6 +2,8 @@ import WebSocket from 'ws'
 import { sign } from 'jsonwebtoken'
 import crypto from 'crypto'
 import dotenv from 'dotenv'
+import { websocketSendData } from './websocket-api'
+import { yourSettings } from './settings'
 
 
 type Snapshot = {
@@ -62,6 +64,7 @@ const {
     CHANNEL_NAMES,
     SIGNING_KEY,
     algorithm,
+    TRACKED_COIN,
     WS_API_URL,
     ws,
     arrTopBids,
@@ -96,7 +99,7 @@ function createGlobals() {
     const arrTopBids = [] as Bid[]
     const arrTopOffers = [] as Offer[]
 
-    const MAX_ITEMS = 11
+    const {MAX_ORDERBOOK_SIZE: MAX_ITEMS, TRACKED_COIN_PAIR: TRACKED_COIN} = yourSettings()
 
     return {
         WS_API_URL,
@@ -107,7 +110,8 @@ function createGlobals() {
         algorithm,
         SIGNING_KEY,
         API_KEY,
-        MAX_ITEMS
+        MAX_ITEMS,
+        TRACKED_COIN
     } as const
 }
 
@@ -249,12 +253,12 @@ function productsOnUpdate(data: Update) {
 
             const newOffer = x
 
-            // 1) If we have removed all our bids, add this one
+            // 1) If we have removed all our offers, add this one
             if (arrTopOffers.length == 0) {
                 arrTopOffers.push(newOffer)
             }
 
-            // 2) Ignore bids lower than our lowest
+            // 2) Ignore offers higher than our top offer
             if (arrTopOffers.length >= MAX_ITEMS) {
                 const ourHighest = arrTopOffers[arrTopOffers.length - 1]
 
@@ -264,17 +268,17 @@ function productsOnUpdate(data: Update) {
                 }
             }
 
-            // 3) Try to match up bids that we have
-            const ourMatchingBidIndex = arrTopOffers.findIndex((ourOffer) => newOffer.price_level == ourOffer.price_level)
-            const ourMatchingBid = arrTopOffers[ourMatchingBidIndex]
-            if (ourMatchingBid) {
+            // 3) Try to match up offers that we have
+            const ourOfferIndex = arrTopOffers.findIndex((ourOffer) => newOffer.price_level == ourOffer.price_level)
+            const ourMatchingOffer = arrTopOffers[ourOfferIndex]
+            if (ourMatchingOffer) {
                 // Quantity is zero, bid is unlisted, remove from ours
                 if (newOffer.new_quantity == '0') {
-                    arrTopOffers.splice(ourMatchingBidIndex, 1)
+                    arrTopOffers.splice(ourOfferIndex, 1)
                 }
                 else {
                     // Update our bid, then do next update
-                    ourMatchingBid.new_quantity = newOffer.new_quantity
+                    ourMatchingOffer.new_quantity = newOffer.new_quantity
                 }
                 continue loop
             }
@@ -284,7 +288,7 @@ function productsOnUpdate(data: Update) {
                 continue loop
             }
 
-            // 5) Check to see if new bid is higher than all of ours
+            // 5) Check to see if new offer is lower than all of ours
             const ourLowest = arrTopOffers[0]
 
             if (Number(newOffer.price_level) < Number(ourLowest.price_level)) {
@@ -293,13 +297,13 @@ function productsOnUpdate(data: Update) {
                 continue loop
             }
 
-            // 6) Add bids we don't
+            // 6) Add offer we don't
             // Loop backwards through list
             for (let i = arrTopOffers.length - 1; i >= 0; i--) {
                 const ourOffer = arrTopOffers[i]
-                // Find the first of our bids which beat the new bid
+                // Find the first of our offer which beat the new offer
                 if (Number(newOffer.price_level) > Number(ourOffer.price_level)) {
-                    // Insert new bid at the previous index
+                    // Insert new offer at the previous index
                     arrTopOffers.splice(i + 1, 0, newOffer)
                     // Ensure the list doesn't exceed max items
                     arrTopOffers.splice(MAX_ITEMS)
@@ -316,6 +320,7 @@ function productsOnUpdate(data: Update) {
 
 type RelativeBid = Bid & { moveVolume: number, totalMoveVolume: number }
 type RelativeOffer = Offer & { moveVolume: number, totalMoveVolume: number }
+export type WSCoinbaseData = {relativeBids: RelativeBid[], relativeOffers: RelativeOffer[], MAX_ITEMS: number}
 
 function calcRelativeOrderSize(bids: Bid[], offers: Offer[]) {
     const relativeBids = [] as RelativeBid[]
@@ -335,7 +340,7 @@ function calcRelativeOrderSize(bids: Bid[], offers: Offer[]) {
     }
     for (let i = 0; i < offers.length; i++) {
         const o = offers[i]
-        const lastTotalVolume = relativeBids[i - 1]?.totalMoveVolume || 0
+        const lastTotalVolume = relativeOffers[i - 1]?.totalMoveVolume || 0
 
         const moveVolume = Number(o.price_level) * Number(o.new_quantity)
         const totalMoveVolume = lastTotalVolume + moveVolume
@@ -375,13 +380,20 @@ function start() {
         });
         const { relativeBids, relativeOffers } = calcRelativeOrderSize(arrTopBids, arrTopOffers)
         console.clear()
-        console.table(relativeOffers.slice().reverse())
+        const reversedRelativeOffers = relativeOffers.slice().reverse()
+        const wsData: WSCoinbaseData = {
+            relativeBids,
+            relativeOffers,
+            MAX_ITEMS
+        } 
+        websocketSendData(wsData)
+        console.table(reversedRelativeOffers)
         console.table(relativeBids)
         // console.table(arrTopOffers)
     });
 
     ws.on('open', function () {
-        const products = ['BTC-USD'];
+        const products = [TRACKED_COIN];
         productsSubscribe(products, CHANNEL_NAMES.level2, ws);
     });
 }
