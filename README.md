@@ -18,6 +18,8 @@ npm install
 npm start
 ```
 
+4. Navigate to http://localhost:8080/coinbase
+
    
 ### Change settings by editing the `./websocket/settings.ts` file: 
 
