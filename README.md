@@ -1,4 +1,7 @@
-Simple terminal app that shows the Coinbase Orderbook for a desired coin using their websocket connection
+# Fast Coinbase Orderbook
+![image](https://github.com/JosiahLeas/CoinbaseOrderbookWebsocket/assets/17595354/9885fcf0-044b-4939-b23c-279f6399b0b6)
+
+## Simple terminal app that shows the Coinbase Orderbook for a desired coin using their websocket connection
 
 Get API Key here - https://cloud.coinbase.com/access/api?keyType=trade
 
